@@ -7,7 +7,7 @@ type matchSpec = types.matchSpec
 
 local dispatcher = {}
 
-local hierarchy = require(script.Parent.Hierarchy).new()
+local hierarchy = require(script.Parent.Hierarchy)
 
 --// Object responsible for dispatching the functions based on type, its the main handler of evezrything
 --// Tried not to use indexing to avoid the overhead
@@ -17,7 +17,7 @@ function dispatcher.new()
 	local self = {}
 	self.hashes= {}
 	self.patterns = {}
-	self.hierarchy = hierarchy
+	self.hierarchy = hierarchy.new()
 	
 	function self:setHierarchy(childType: string, parentType: string)
 		self.hierarchy:setParent(childType, parentType)
