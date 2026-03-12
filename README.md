@@ -1,6 +1,6 @@
 # Multiple Dispatch Library for Roblox
 
-A simple, yet powerful Multiple Dispatch (MD) service for Roblox that lets you define different function behaviors based on argument types, values, and hierarchies.
+A simple, yet powerful Multiple Dispatch (MD) library for Roblox that lets you define different function behaviors based on argument types, values, and hierarchies.
 
 **Created by:** GMC! (eclipysus on Discord)
 
@@ -39,10 +39,66 @@ end)
 
 ---
 
+## Setup
+
+Place all modules inside a folder in `ReplicatedStorage` called `MD`. The folder structure should look like this:
+
+```
+ReplicatedStorage
+└── MD
+	├── MD ← main entry point, require this one
+	├── Scoper
+	├── Dispatcher
+	├── Object
+	├── Matcher
+	├── Hierarchy
+	└── Utils
+```
+
+Then in any script:
+
+```lua
+local MD = require(game.ReplicatedStorage.MD.MD)
+```
+
+---
+
+## Entry Points
+
+There are three ways to create a dispatcher depending on what you need.
+
+### MD.new()
+A standalone dispatcher. Nothing can look it up later — you have to pass it around manually. Good for isolated, self-contained systems.
+
+```lua
+local dispatch = MD.new()
+```
+
+### MD.scope(name)
+A named dispatcher. Any script that calls `MD.scope("SameName")` gets back the exact same instance. Good for shared systems across multiple scripts.
+
+```lua
+local combat = MD.scope("Combat") -- creates it
+local combat = MD.scope("Combat") -- returns the same one
+```
+
+If no name is passed, it defaults to a global scope.
+
+### MD.object(name or dispatcher)
+Creates an object whose methods are automatically dispatched. Accepts either a scope name or an existing dispatcher.
+
+```lua
+local character = MD.object("Combat")
+-- or
+local character = MD.object(myDispatcher)
+```
+
+---
+
 ## Basic Usage
 
 ```lua
-local MD = require(game.ReplicatedStorage.MD)
+local MD = require(game.ReplicatedStorage.MD.MD)
 
 local example = MD.new()
 
@@ -55,8 +111,8 @@ example:register({"Player", "Model"}, function(player, model)
 end)
 
 local player = game.Players.LocalPlayer
-example(player, game.Workspace.somePart)
-example(player, game.Workspace.someModel) -- uses metatable __call so you can call it just like a function!
+example(player, workspace.somePart) -- uses __call, works just like a function!
+example(player, workspace.someModel)
 ```
 
 ---
@@ -65,7 +121,7 @@ example(player, game.Workspace.someModel) -- uses metatable __call so you can ca
 
 ### Hierarchy System
 
-Basic hierarchy system: if a child isn't equal in type or value to a registered function, it checks the parents until it finds a match!
+If an argument's type doesn't directly match a registered spec, MD walks up the hierarchy you define until it finds a match.
 
 ```lua
 local combat = MD.new()
@@ -75,7 +131,7 @@ combat:setHierarchy("MeshPart", "BasePart")
 combat:setHierarchy("WedgePart", "BasePart")
 
 combat:register({"Player", "BasePart"}, function(player, part)
-print("Works with ANY BasePart child!")
+	print("Works with ANY BasePart child!")
 end)
 
 combat(player, workspace.Part)
@@ -83,39 +139,75 @@ combat(player, workspace.MeshPart)
 combat(player, workspace.WedgePart)
 ```
 
-**Hierarchy step by step:**
-1. Checks if Part == BasePart > false
-2. Gets Part's parents → [BasePart]
-3. Checks if BasePart == BasePart > true!
-4. Executes function
+**Step by step for `Part`:**
+1. Is `Part == BasePart`? No
+2. Get `Part`'s parents → `[BasePart]`
+3. Is `BasePart == BasePart`? Yes — execute function!
+
+---
+
+### Named Method Dispatch (Object System)
+
+Register functions under a method name, then call them naturally through an object.
+
+```lua
+local MD = require(game.ReplicatedStorage.MD.MD)
+
+local scope = MD.scope("Combat")
+
+scope:register("attack", {"Enemy"}, function(enemy)
+	print("attack enemy")
+end)
+
+scope:register("attack", {"Boss"}, function(boss)
+	print("attack boss — special case!")
+end)
+
+scope:register("heal", {"number"}, function(amount)
+	print("healing for", amount)
+end)
+
+local character = MD.object("Combat")
+
+character:attack(enemy) -- routes to "attack" + Enemy
+character:attack(boss) -- routes to "attack" + Boss
+character:heal(50) -- routes to "heal" + number
+```
+
+Named and unnamed registrations are completely separate, so `scope(...)` direct calls still work alongside object method calls.
+
+---
 
 ### Value Matching
 
-Match specific instances or values, not just types!
+Match specific values — not just types. Any non-type argument passed as a spec is treated as a value match.
 
 ```lua
-local doors = MD.new()
+local keybinds = MD.scope("Keybinds")
 
-doors:register({
-	{mode = "value", value = game.Workspace.specialDoor},
-	"Player"
-}, function(door, player)
-	print("THE special door was opened!")
+keybinds:register({Enum.KeyCode.One}, function(key) print("pressed 1") end)
+keybinds:register({Enum.KeyCode.E}, function(key) print("interact") end)
+keybinds:register({"EnumItem"}, function(key) print("other key") end) -- fallback
+
+game:GetService("UserInputService").InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+	keybinds(input.KeyCode)
 end)
-
-doors:register({"Model", "Player"}, function(door, player)
-	print("A regular door was opened")
-end)
-
-doors(game.Workspace.specialDoor, player)
-doors(game.Workspace.regularDoor, player)
 ```
 
-> Hmmm... I wonder what game that uses a lot of doors could find this useful? 🤔
+String specs work the same way. If the string is a known Roblox/Lua type it becomes a type spec, otherwise it's treated as a value:
+
+```lua
+scope:register({"number"}, func) -- type spec
+scope:register({"/die"}, func) -- value spec, matches the string "/die"
+```
+
+---
 
 ### Any Matching
 
-Any type will do!
+Use `"any"` or `nil` as a spec to match any argument regardless of type.
 
 ```lua
 local inventory = MD.new()
@@ -130,9 +222,11 @@ inventory(player, 12345)
 inventory(player, "anything works!")
 ```
 
+---
+
 ### Variable Arguments
 
-Functions support any amount of arguments!
+Registrations can have any number of specs. The correct function is chosen based on how many arguments are passed and what they are.
 
 ```lua
 local events = MD.new()
@@ -146,7 +240,7 @@ events:register({"Player", "Part", "number"}, function(player, part, damage)
 end)
 
 events:register({"Player", "Part", "number", "string", "boolean"}, function(p, part, dmg, weapon, crit)
-	print("Woah thats a lot of arguments!")
+	print("Woah, that's a lot of arguments!")
 end)
 
 events(player)
@@ -158,47 +252,30 @@ events(player, workspace.Boss, 100, "Sword", true)
 
 ## Priority System
 
-When multiple patterns match, priority is:
-1. **Value matches** (most specific)
-2. **Type matches** (medium)
-3. **Any matches** (least specific)
+When multiple patterns could match the same call, the most specific one wins. Each spec in a matching pattern is scored:
+
+| Spec Mode | Score |
+|-----------|-------|
+| Value | 3 |
+| Type | 2 |
+| Any | 1 |
+
+The pattern with the highest total score wins. Value-only patterns are also stored in a fast hash table and checked first, before scoring even runs.
 
 ```lua
 local priority = MD.new()
 
-local chest = Instance.new("Part")
-chest.Parent = workspace
-chest.Name = "Chest"
-
-local vipPlayer
-
-for _, player in game.Players:GetPlayers() do
-	if math.random(1, 2) == 2 then
-	player:SetAttribute("IsVIP", true)
-		vipPlayer = player
-		break
-	end
-end
-
-priority:register({
-	{mode = "value", value = vipPlayer},
-	"Part"
-}, function(player, part)
-	print("VIP player gets special treatment!")
+priority:register({Enum.KeyCode.E, "Player"}, function(key, player)
+	print("E key specifically!") -- score 3+2 = 5, wins
 end)
 
-priority:register({"Player", "Part"}, function(player, part)
-	print("Regular player")
+priority:register({"EnumItem", "Player"}, function(key, player)
+	print("any key") -- score 2+2 = 4
 end)
 
-priority:register({"any", "Part"}, function(anything, part)
-	print("Fallback for any entity")
+priority:register({"any", "Player"}, function(key, player)
+	print("absolute fallback") -- score 1+2 = 3
 end)
-
-if vipPlayer then
-	priority(vipPlayer, chest)
-end
-priority(player, chest)
 ```
 
 ---
@@ -206,55 +283,89 @@ priority(player, chest)
 ## Practical Example: Combat System
 
 ```lua
-local damage = MD.new()
+local MD = require(game.ReplicatedStorage.MD.MD)
 
-damage:setHierarchy("Humanoid", "Instance")
+local combat = MD.scope("Combat")
 
-damage:register({"Player", "Humanoid", "number"}, function(attacker, target, amount)
+combat:setHierarchy("Humanoid", "Instance")
+
+combat:register("attack", {"Humanoid", "number"}, function(target, amount)
 	target.Health -= amount
-	print(attacker.Name .. " dealt " .. amount .. " damage!")
+	print("dealt " .. amount .. " damage!")
 end)
 
-damage:register({"Player", "Humanoid", "number", "string"}, function(attacker, target, amount, weapon)
+combat:register("attack", {"Humanoid", "number", "string"}, function(target, amount, weapon)
 	local multiplier = weapon == "Sword" and 1.5 or 1
 	target.Health -= amount * multiplier
-	print(attacker.Name .. " dealt " .. (amount * multiplier) .. " with " .. weapon)
+	print("dealt " .. (amount * multiplier) .. " with " .. weapon)
 end)
 
-damage:register({"NPC", "Player", "number"}, function(npc, player, amount)
-	local humanoid = player.Character:FindFirstChild("Humanoid")
-	if humanoid then
-		humanoid.Health -= amount * 0.5
-		print("NPC attacks are weaker!")
-	end
+local character = MD.object("Combat")
+
+character:attack(enemy.Humanoid, 20)
+character:attack(enemy.Humanoid, 20, "Sword")
+```
+
+---
+
+## Practical Example: Chat Commands
+
+```lua
+local MD = require(game.ReplicatedStorage.MD.MD)
+local player = game.Players.LocalPlayer
+
+local commands = MD.scope("Commands")
+
+commands:register({"/die", "any"}, function(message, plr)
+	plr.Character.Humanoid.Health = 0
+end)
+
+commands:register({"/heal", "any"}, function(message, plr)
+	plr.Character.Humanoid.Health = 100
+end)
+
+player.Chatted:Connect(function(message)
+	commands(message, player)
 end)
 ```
 
 ---
 
-## TL;DR? Examples below
+## TL;DR Quick Reference
 
-### ROBLOX HIERARCHY
+### Setup hierarchy
 ```lua
 md:setHierarchy("Part", "BasePart")
 md:setHierarchy("MeshPart", "BasePart")
 md:setHierarchy("BasePart", "Instance")
 ```
 
-### COMBAT SYSTEM
+### Named method dispatch
 ```lua
-combat:register({"Player", "Enemy", "number"}, dealDamage)
-combat:register({"Enemy", "Player", "number"}, takeDamage)
+scope:register("attack", {"Enemy", "number"}, dealDamage)
+scope:register("defend", {"Shield"}, block)
+
+local character = MD.object("Combat")
+character:attack(enemy, 50)
+character:defend(shield)
 ```
 
-### INTERACTION SYSTEM
+### Value matching
 ```lua
-interact:register({"Player", "any"}, handleInteraction)
+scope:register({Enum.KeyCode.E}, onInteract)
+scope:register({"/die", "any"}, onDie)
+scope:register({{mode = "value", value = workspace.BossRoom}, "Player"}, bossEncounter)
 ```
 
-### INSTANCES
+### Shared scope across scripts
 ```lua
-doors:register({{mode="value", value=bossRoom}, "Player"}, bossEncounter)
+-- Script A
+local scope = MD.scope("Events")
+scope:register({"Part", "Player"}, onTouch)
+
+-- Script B
+local scope = MD.scope("Events") -- same instance
+scope(part, player)
 ```
 
 ---
