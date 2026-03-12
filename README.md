@@ -43,23 +43,8 @@ end)
 
 ## Setup
 
-Place all modules inside a folder in `ReplicatedStorage` called `MD`.
 
-Structure:
-
-```
-ReplicatedStorage
-└── MD
-    ├── MD (main entry point)
-    ├── Scoper
-    ├── Dispatcher
-    ├── Object
-    ├── Matcher
-    ├── Hierarchy
-    └── Utils
-```
-
-Then require it in a script:
+Place it in replicated storage, then require it in a script:
 
 ```lua
 local MD = require(game.ReplicatedStorage.MD.MD)
