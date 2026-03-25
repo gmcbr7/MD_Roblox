@@ -4,8 +4,6 @@ A Multiple Dispatch (MD) library for Roblox that lets you define different funct
 
 Created by: GMC (eclipysus on Discord)
 
-I've been coding for about 6 months, so this is an early version. I plan to revisit and improve parts of it later once I have more experience. Feedback is welcome.
-
 Special thanks to my brother for introducing me to the concept and recommending books about languages like Common Lisp that use multiple dispatch.
 
 ---
